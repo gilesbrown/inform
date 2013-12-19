@@ -1,0 +1,47 @@
+<html>
+  <head>
+  </head>
+  <body>
+    <!-- this is basically a link -->
+    <form name="elsewhere" action="/elsewhere">
+         <h2>elsewhere</h2>
+         <input type="submit" name="btn" value="Submit" />
+    </form>
+    <!-- this is basically a link -->
+    <form name="get" action="/redirected?dummy=anything">
+        <h2>get</h2>
+        <label for="page">page</label>
+        <input name="page" />
+        <input type="submit" value="Submit" />
+    </form>
+    <form name="get_with_query_in_action" action="/redirected?page=9">
+        <h2>get_with_query_in_action</h2>
+        <label for="dummy">dummy</label>
+        <input name="dummy" type="text" />
+        <input type="submit" value="Submit" />
+    </form>
+    <form name="get_with_hidden" action="/redirected">
+        <h2>get_with_hidden</h2>
+        <input type="hidden" name="page" value="9" />
+        <label for="dummy">dummy</label>
+        <input name="dummy" />
+        <input type="submit" value="Submit" />
+    </form>
+    <form name="delete_page_9" action="/redirected?page=9">
+        <h2>delete_page_9</h2>
+        <input type="hidden" name="_method" value="delete" />
+        <label for="dummy">dummy</label>
+        <input type="text" name="dummy" />
+        <input type="submit" value="Submit" />
+    </form>
+    <form name="upload" action="/send" method="post" 
+        enctype="multipart/form-data">
+        <h2>send</h2>
+        <label for="dummy">dummy</label>
+        <input type="text" name="dummy" />
+        <label for="upload">upload</label>
+        <input type="file" name="content" />
+        <input type="submit" name="btn" value="Submit" />
+    </form>                                                                                                                        
+  </body>
+</html>
