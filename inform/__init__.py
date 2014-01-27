@@ -1,16 +1,13 @@
-from inform.rest import StateTransfer
-from inform.request import GET
-from inform.parser import InformParser
+import requests
+from .parser import InformParser
 
+session_factory = requests.session
+parser_factory = InformParser
 
-def get(url, session=None):
+def get(url, parser=None, session=None):
     if session is None:
-        session = create_session()
-    return ReST(session.get(url), session)
-
-
-class ReST(object):
-    """ A Representational State Transfer. """
-    def __init__(self):
-    def transfer(self, request):
-        
+        session = session_factory()
+    if parser is None:
+        parser = parser_factory(session)
+    link = parser.create_link('get', url)
+    return link()

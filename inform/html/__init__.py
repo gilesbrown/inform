@@ -1,10 +1,3 @@
-class Parent(object):
-
-    def __init__(self):
-        self.children = []
-
-    def append(self, child):
-        self.children.append(child)
 
     def walk(self):
         remainder = [self]

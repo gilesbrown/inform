@@ -1,6 +1,0 @@
-
-<%def name="form(formobj)">
-    <form>
-        this is myfunc, formobj is ${formobj}
-    </form>        
-</%def>
