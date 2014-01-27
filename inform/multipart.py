@@ -1,5 +1,8 @@
 """ Generate multipart/form-data in pieces suitable for chunked transfer. """
 
+import os
+import mimetypes
+from operator import itemgetter
 from itertools import chain
 from uuid import uuid4
 
@@ -10,6 +13,61 @@ LEN_CRLF = len(CRLF)
 LEN_HEX = len(uuid4().hex)
 CONTENT_DISPOSITION = b'Content-Disposition'
 CONTENT_TYPE = b'Content-Type'
+
+
+class FileValue(object):
+
+
+    def __init__(self, value):
+        self.value = value
+
+    def __getattr__(self, name):
+        return getattr(self.value, name)
+
+    def __len__(self):
+        try:
+            return len(self.value)
+        except (AttributeError, TypeError):
+            pass
+        return os.stat(self.value.name).st_size
+
+    @property
+    def filename(self):
+        return getattr(self.value, 'name', None)
+
+    @property
+    def content_type(self):
+        # Give the object a chance to define this
+        content_type = getattr(self.value, 'content_type', None)
+        if content_type:
+            return content_type
+        # Now try and guess using the file name
+        filename = self.filename
+        if self.filename is not None:
+            content_type = mimetypes.guess_type(filename)[0]
+            if content_type:
+                return content_type
+        # Now just fall back...
+        return 'application/octet-stream'
+
+
+class FormData(tuple):
+
+    name = property(itemgetter(0))
+    value = property(itemgetter(1))
+
+    def __new__(cls, name, value):
+        instance = tuple.__new__(cls, (name, value))
+        return instance
+
+    @property
+    def filename(self):
+        return getattr(self.value, 'filename', None)
+
+    @property
+    def content_type(self):
+        return getattr(self.value, 'content_type', 'text/plain')
+
 
 
 #

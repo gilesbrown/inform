@@ -1,111 +1,99 @@
-import urllib2
-import weakref
 from contextlib import closing
+from urlparse import urljoin
 from HTMLParser import HTMLParser
-from .document import Document
-
-_link_repr = "{module}.{class}('{0.href}', {0.parser!r})".format
-
-GET = 'GET'
-
-class Link(unicode):
-    
-    def __new__(cls, href, parser):
-        instance = super(Link, cls).__new__(cls, href)
-        instance.parser = parser
-        
-    def __call__(self):
-        return self.parser.request(GET, self.href)
-   
-    __repr__ = '{0.__class__.__name__}("{0.href}", {0.parser!r})'.format
-    
-
-class Builder(object):
-    def start(self, tag, attrs):
-        return self
-    def end(self, child):
-        pass
-    
-class FormBuilder(object):
-    def __init__(self, tag, id):
-        assert tag == 'form'
-        self.id = id
-        self.built = Form()
-    
-class NamespaceBuilder(Builder):
-    builders = {
-        'form' : FormBuilder,
-    }
-    def __init__(self, namespace):
-        self.namespace = namespace
-    def start(self, tag, attrs):
-        attrs = dict(attrs)
-        if 'id' in attrs:
-            return self.builders[tag](tag, **attrs)
-        return self
-    def end(self, child):
-        if child is not self:
-            setattr(self.namespace, child.id, child.built)
-            
-
-class Link(object):
-    def __init__(self, **kw):
-        self.href = kw.pop('href')
-        
-class Form(object):
-    
-    def __init__(self):
-        self.inputs = []
-        
-    def __call__(self, **kw):
-        data = []
-        for input in self.inputs:
-            data.append(input.name, input.validate(kw.pop(input.name, input.value)))
-        if kw:
-            raise TypeError()
-        
-        
-class AssignLink(object):
-    value_class = Link
+from .representation import Representation, Form, Link, Input
 
 
 CHUNK_SIZE = 1024
 
-class Namespace(object):
-    pass
+
+class RepresentationBuilder(object):
+
+    def __init__(self, parser, response):
+        self.parser = parser
+        self.response = response
+        self.built = Representation(response)
+
+    def start(self, tag, attrs):
+        if tag == 'form' and 'id' in attrs:
+            return FormBuilder(self.parser, self.response, tag, **attrs)
+        elif tag == 'a':
+            return LinkBuilder(self.parser, self.response, tag, **attrs)
+        return self
+
+    def build(self, builder):
+        if builder is not self:
+            setattr(self.built, builder.id, builder.built)
+
+
+class InputBuilder(object):
+
+    def __init__(self, parser, tag, **attrs):
+        self.built = Input(**attrs)
+
+    def start(self, tag, attrs):
+        return self
+
+    def build(self, builder):
+        raise NotImplementedError()
+
+
+class FormBuilder(object):
+
+    def __init__(self, parser, response, tag, **attrs):
+        self.response = response
+        assert tag == 'form'
+        self.id = attrs['id']
+        action = urljoin(response.url, attrs.get('action', ''))
+        method = attrs.get('method', 'GET')
+        enctype = attrs.get('enctype', None)
+        self.built = Form(parser, [], action, method, enctype)
+
+    def start(self, tag, attrs):
+        if tag == 'input' and 'name' in attrs:
+            return InputBuilder(self.built.parser, tag, **attrs)
+        return self
+
+    def build(self, builder):
+        if builder is not self:
+            self.built.inputs.append(builder.built)
+
+
+class LinkBuilder(object):
+    def __init__(self, parser, response, tag, **attrs):
+        self.id = attrs['id']
+        href = urljoin(response.url, attrs.get('href', ''))
+        self.built = Link(parser, href)
+
+
+
 
 class InformParser(HTMLParser):
 
-    #element_classes = dict(html=Document, form=Form)
-    #element_classes = dict(form=Form)
-
-    def __init__(self):
+    def __init__(self, session):
         HTMLParser.__init__(self)
+        self.session = session
         self.stack = None
 
-    @classmethod
-    def parse(cls, response, *args, **kwargs):
-        parser = cls(*args, **kwargs)
-        return parser.parse_response(readable)
+    def request(self, method, url, **kwargs):
+        response = self.session.request(method, url, **kwargs)
+        return self.parse(response)
 
-    def parse_response(self, readable):
-        root = NamespaceBuilder(Namespace())
-        self.stack = [root]
+    def parse(self, response):
+        builder = RepresentationBuilder(self, response)
+        self.stack = [builder]
         with closing(self):
-            while True:
-                chunk = readable.read(CHUNK_SIZE)
-                if not chunk:
-                    break
-                self.feed(chunk)
-        return root.namespace
+            self.feed(response.content)
+        return builder.built
 
     def handle_startendtag(self, tag, attrs):
         self.handle_starttag(tag, attrs)
         self.handle_endtag(tag)
 
     def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
         self.stack.append(self.stack[-1].start(tag, attrs))
 
     def handle_endtag(self, tag):
         ended = self.stack.pop()
-        self.stack[-1].end(ended)
+        self.stack[-1].build(ended)

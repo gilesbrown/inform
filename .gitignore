@@ -1,5 +1,8 @@
 *.py[cod]
 
+# VIM crashes
+*.swp
+
 # C extensions
 *.so
 
