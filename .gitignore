@@ -1,3 +1,9 @@
+# Eclipse?
+.settings
+
+# The virtualenv
+.venv
+
 *.py[cod]
 
 # VIM crashes

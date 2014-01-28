@@ -1,79 +1,133 @@
+import re
 from contextlib import closing
+from functools import partial
 from urlparse import urljoin
 from HTMLParser import HTMLParser
 from .representation import Representation, Form, Link, Input
 
+class Builder(object):
+    """ Base class for all builders. """
+    
+    def __init__(self, parser, make_url_absolute, tag, attrs):
+        self.parser = parser
+        self.make_url_absolute = make_url_absolute
+        self.tag = tag
+        self.attrs = attrs
+    
+    def start(self, tag, attrs):
+        # Returning 'self' means ignore this tag
+        return self
+    
+    def end(self, tag, builder):
+        print "BUILDER END %r %r" % (tag, builder), builder is self
+        if builder is self:
+            # We don't care about the tag that has just ended
+            return
+        self.add(builder)
+        
+    def add(self, builder):
+        raise NotImplementedError()
+    
+    def build(self):
+        raise NotImplementedError(self.tag)
+    
 
-CHUNK_SIZE = 1024
+class InputBuilder(Builder):
+    def build(self):
+        return Input(self.attrs['name'], self.attrs.get('type', None), 
+                     self.attrs.get('value', None))
 
 
-class RepresentationBuilder(object):
+class SelectBuilder(Builder):
+    pass
+
+
+_tunnel_methods = ['PUT', 'PATCH', 'DELETE']
+_method_query_search = re.compile('\?_method=({0})(&|$)'.format('|'.join(_tunnel_methods))).search
+
+class FormBuilder(Builder):
+    
+    builder_classes = {
+        'input': InputBuilder,
+        'select': SelectBuilder,
+    }
+    
+    def __init__(self, *args):
+        Builder.__init__(self, *args)
+        self.inputs = []
+    
+    def start(self, tag, attrs):
+        if 'name' in attrs and tag in self.builder_classes:
+            cls = self.builder_classes[tag]
+            return cls(self.parser, self.make_url_absolute, tag, attrs)
+        return self
+    
+    def build(self):
+        action = self.make_url_absolute(self.attrs.get('action', ''))
+        enctype = self.attrs.get('enctype', None)
+        method = self.attrs.get('method', 'GET')
+        if method == 'POST' and '?_method=' in action:
+            match = _method_query_search(action)
+            if match:
+                method = match.group(1)
+        return Form(self.parser, self.inputs, action, method, enctype)
+        
+    def add(self, builder):
+        self.inputs.append(builder.build())
+
+
+class LinkBuilder(Builder):
+    def build(self):
+        url = self.make_url_absolute(self.attrs.get('href', ''))
+        return Link(self.parser, url)
+
+
+class ValueBuilder(Builder):
+    pass
+
+class RepresentationBuilder(Builder):
+    
+    builder_classes = {
+        'form': FormBuilder,
+        'a': LinkBuilder,
+    }
 
     def __init__(self, parser, response):
-        self.parser = parser
+        make_url_absolute = partial(urljoin, response.url)
+        Builder.__init__(self, parser, make_url_absolute, None, {})
         self.response = response
-        self.built = Representation(response)
+        self.items = []
 
     def start(self, tag, attrs):
-        if tag == 'form' and 'id' in attrs:
-            return FormBuilder(self.parser, self.response, tag, **attrs)
-        elif tag == 'a':
-            return LinkBuilder(self.parser, self.response, tag, **attrs)
+        if 'id' in attrs:
+            cls = self.builder_classes.get(tag, ValueBuilder)
+            print "HEY %r" % cls
+            try:
+                return cls(self.parser, self.make_url_absolute, tag, attrs)
+            except Exception as exc:
+                return self
         return self
+    
+    def add(self, builder):
+        self.items.append((builder.attrs['id'], builder.build()))
 
-    def build(self, builder):
-        if builder is not self:
-            setattr(self.built, builder.id, builder.built)
-
-
-class InputBuilder(object):
-
-    def __init__(self, parser, tag, **attrs):
-        self.built = Input(**attrs)
-
-    def start(self, tag, attrs):
-        return self
-
-    def build(self, builder):
-        raise NotImplementedError()
-
-
-class FormBuilder(object):
-
-    def __init__(self, parser, response, tag, **attrs):
-        self.response = response
-        assert tag == 'form'
-        self.id = attrs['id']
-        action = urljoin(response.url, attrs.get('action', ''))
-        method = attrs.get('method', 'GET')
-        enctype = attrs.get('enctype', None)
-        self.built = Form(parser, [], action, method, enctype)
-
-    def start(self, tag, attrs):
-        if tag == 'input' and 'name' in attrs:
-            return InputBuilder(self.built.parser, tag, **attrs)
-        return self
-
-    def build(self, builder):
-        if builder is not self:
-            self.built.inputs.append(builder.built)
-
-
-class LinkBuilder(object):
-    def __init__(self, parser, response, tag, **attrs):
-        self.id = attrs['id']
-        href = urljoin(response.url, attrs.get('href', ''))
-        self.built = Link(parser, href)
-
+    def build(self):
+        rep = Representation(self.response)
+        for (itemid, itemobj) in self.items:
+            setattr(rep, itemid, itemobj)
+        return rep
 
 
 
 class InformParser(HTMLParser):
+    """ Parses Inform HTML and creates 
+    :class:`inform.representation.Represtation` instances.
+    """
 
     def __init__(self, session):
         HTMLParser.__init__(self)
         self.session = session
-        self.stack = None
+        self.stack = []
 
     def request(self, method, url, **kwargs):
         response = self.session.request(method, url, **kwargs)
@@ -84,7 +138,7 @@ class InformParser(HTMLParser):
         self.stack = [builder]
         with closing(self):
             self.feed(response.content)
-        return builder.built
+        return builder.build()
 
     def handle_startendtag(self, tag, attrs):
         self.handle_starttag(tag, attrs)
@@ -92,8 +146,11 @@ class InformParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        self.stack.append(self.stack[-1].start(tag, attrs))
+        print "START:", self.stack, tag
+        builder = self.stack[-1].start(tag, attrs)
+        self.stack.append(builder)
 
     def handle_endtag(self, tag):
-        ended = self.stack.pop()
-        self.stack[-1].build(ended)
+        child = self.stack.pop()
+        # Tell parent in stack about 'end' of child
+        self.stack[-1].end(tag, child)
