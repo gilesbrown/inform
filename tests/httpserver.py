@@ -1,11 +1,13 @@
 """ An HTTP server for use in functional tests. """
 
 import os
+import cgi
 import threading
 import shutil
+from StringIO import StringIO
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler, test
 from pkg_resources import resource_stream
-from test.filesystem import url2resource
+from .filesystem import url2resource
 
 
 # maximal line length when calling readline().
@@ -27,6 +29,9 @@ class RequestHandler(BaseHTTPRequestHandler):
     __version__ = ''
 
     server_version = "SimpleHTTP/" + __version__
+    
+    def log_message(self, format, *args):    
+        pass
 
     def do_GET(self):
         """Serve a GET request."""
@@ -44,30 +49,31 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         content_length = self.headers.getheader('content-length')
         transfer_encoding = self.headers.getheader('transfer-encoding')
-        import sys
+        environ = {'REQUEST_METHOD': 'POST'}
         if content_length is not None:
-            print "CT:", self.headers.getheader('content-type')
-            #print self.rfile.read(int(content_length))
-            import cgi
-            fs = cgi.FieldStorage(self.rfile, headers=self.headers)
-            print "KEYS:", fs.keys()
-            #remainder = int(content_length)
-            #with open('c:\\work\giles.resp', 'wb') as fp:
-            ##    while remainder > 0:
-            ##        size = min(remainder, 8192)
-            #        fp.write(self.rfile.read(size))
-            #        remainder -= size
+            if self.path == '/chunked':
+                # We only serve chunked requests here
+                self.send_response(400)
+                self.end_headers()
+                return
+            fp = self.rfile
         elif transfer_encoding == 'chunked':
-            #print "IT's CHUNKED!?!?", type(self.rfile)
+            fp = StringIO()
             for chunk in self.read_chunks():
-                sys.stdout.write(chunk)
-        f = self.send_head()
-        if f:
-            self.copyfile(f, self.wfile)
-            f.close()
+                fp.write(chunk)
+            fp.seek(0)
+        else:
+            self.send_response(400)
+            self.end_headers()
+            return
+        fs = cgi.FieldStorage(fp, headers=self.headers, environ=environ)
+        if fs.keys() != ['content']:
+            self.send_response(400)
+        self.send_response(201)
+        self.end_headers()
 
     def do_DELETE(self):
-        self.send_response(201)
+        self.send_response(204)
         self.end_headers()
 
     def read_chunks(self):
@@ -133,7 +139,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         """
         shutil.copyfileobj(source, outputfile)
-
+        
 
 if __name__ == '__main__':
     test(RequestHandler, HTTPServer)

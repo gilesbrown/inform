@@ -19,7 +19,6 @@ class Builder(object):
         return self
     
     def end(self, tag, builder):
-        print "BUILDER END %r %r" % (tag, builder), builder is self
         if builder is self:
             # We don't care about the tag that has just ended
             return
@@ -42,8 +41,7 @@ class SelectBuilder(Builder):
     pass
 
 
-_tunnel_methods = ['PUT', 'PATCH', 'DELETE']
-_method_query_search = re.compile('\?_method=({0})(&|$)'.format('|'.join(_tunnel_methods))).search
+methods_tunnelled_through_post = ['PUT', 'PATCH', 'DELETE']
 
 class FormBuilder(Builder):
     
@@ -51,6 +49,10 @@ class FormBuilder(Builder):
         'input': InputBuilder,
         'select': SelectBuilder,
     }
+    
+    method_in_action = re.compile('\?_method=({0})(&|$)'.format(
+        '|'.join(method.lower() for method in methods_tunnelled_through_post)
+    )).search
     
     def __init__(self, *args):
         Builder.__init__(self, *args)
@@ -65,11 +67,11 @@ class FormBuilder(Builder):
     def build(self):
         action = self.make_url_absolute(self.attrs.get('action', ''))
         enctype = self.attrs.get('enctype', None)
-        method = self.attrs.get('method', 'GET')
+        method = self.attrs.get('method', 'get').upper()
         if method == 'POST' and '?_method=' in action:
-            match = _method_query_search(action)
+            match = self.method_in_action(action)
             if match:
-                method = match.group(1)
+                method = match.group(1).upper()
         return Form(self.parser, self.inputs, action, method, enctype)
         
     def add(self, builder):
@@ -101,11 +103,7 @@ class RepresentationBuilder(Builder):
     def start(self, tag, attrs):
         if 'id' in attrs:
             cls = self.builder_classes.get(tag, ValueBuilder)
-            print "HEY %r" % cls
-            try:
-                return cls(self.parser, self.make_url_absolute, tag, attrs)
-            except Exception as exc:
-                return self
+            return cls(self.parser, self.make_url_absolute, tag, attrs)
         return self
     
     def add(self, builder):
@@ -146,7 +144,6 @@ class InformParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        print "START:", self.stack, tag
         builder = self.stack[-1].start(tag, attrs)
         self.stack.append(builder)
 

@@ -59,10 +59,10 @@ def test_form_enctype():
    
     
 def test_form_method_replacement():
-    res = parse('<form id="f1" method="POST" action="?_method=DELETE&x=1" />', 
+    res = parse('<form id="f1" method="POST" action="?_method=delete&x=1" />', 
                 ['response', 'f1'])
     eq_(res.f1.method, 'DELETE')
-    eq_(res.f1.action, URL + '?_method=DELETE&x=1')
+    eq_(res.f1.action, URL + '?_method=delete&x=1')
 
 
 def test_minimal_input():

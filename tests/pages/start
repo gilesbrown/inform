@@ -1,0 +1,39 @@
+<html>
+  <body>
+    <!-- We'll put in just enough HTML to allow browser usage --> 
+    <form id="elsewhere" action="/elsewhere">
+         <input name="x" type="hidden" value="1" />
+         <button type="submit">elsewhere</button>
+    </form>
+    <form id="get_page" action="/redirected?dummy=anything">
+        <input name="page" />
+        <button type="submit">get_path</button>
+    </form>
+    <form id="get_with_action_query" action="/redirected?page=9">
+        <input name="dummy" type="text" />
+        <button type="submit">get_page_with_action_query</button>
+    </form>
+    <form id="get_with_hidden" action="/redirected">
+        <input type="hidden" name="page" value="9" />
+        <button type="submit">get_page_with_action_query</button>
+    </form>
+    
+    <form id="delete_page" method="post" action="/redirected?_method=delete">
+        <input type="text" name="page" value="9" />
+        <button type="submit">delete_page</button>
+    </form>
+
+    <form id="upload" action="/send" method="post" 
+        enctype="multipart/form-data">
+        <input name="content" type="file" />
+        <button type="submit">upload</button>
+    </form>
+    
+    <form id="upload_chunked" action="/chunked" method="post" 
+        enctype="multipart/form-data">
+        <input name="content" type="file" />
+        <button type="submit">upload</button>
+    </form>
+    
+  </body>
+</html>

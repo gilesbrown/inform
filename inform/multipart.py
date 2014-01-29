@@ -139,7 +139,10 @@ class Part(object):
         yield CRLF
 
 
+format_enctype_with_boundary = '{0}; boundary={1}'.format
+
 class MultipartFormData(object):
+    
 
     def __init__(self, data):
         self.boundary = generate_boundary()
@@ -147,6 +150,12 @@ class MultipartFormData(object):
                       if datum.value is not None]
         self.pieces = None
         self.remainder = ''
+        
+    def headers(self, enctype):
+        return {'Content-type': format_enctype_with_boundary(enctype, self.boundary)}
+    
+    def __nonzero__(self):
+        return True
 
     def __len__(self):
         # We'll get a TypeError here if we have a file-like that we can't
@@ -163,6 +172,13 @@ class MultipartFormData(object):
             yield (DASHDASH, self.boundary, CRLF)
             yield part.pieces(size_hint)
         yield (DASHDASH, self.boundary, DASHDASH, CRLF)
+        
+    def __iter__(self):
+        while True:
+            chunk = self.read()
+            if not chunk:
+                break
+            yield chunk
 
     def read(self, size=None):
         if size is None:

@@ -3,7 +3,6 @@ from contextlib import closing
 from tempfile import NamedTemporaryFile
 from StringIO import StringIO
 from nose.tools import eq_, with_setup
-from inform.form import FormData, FileValue
 from inform import multipart
 
 fixed_boundary = '1bcd71449e634565a1a4d295c0255f43'
@@ -27,7 +26,7 @@ with_fixed_boundary = with_setup(setup_fixed_boundary,
 
 
 def test_part():
-    part = multipart.Part(FormData(b'a', 'b'))
+    part = multipart.Part(multipart.FormData(b'a', 'b'))
     pieces = list(part.pieces(8192))
     eq_(len(pieces), 5)
     expected_pieces = [
@@ -43,8 +42,9 @@ def test_part():
 
 def test_part_read():
     size_hint = 6
-    part = multipart.Part(FormData(b'a',
-                                FileValue(StringIO(ascii_lowercase))))
+    file_value = multipart.FileValue(StringIO(ascii_lowercase))
+    form_data = multipart.FormData(b'a', file_value)
+    part = multipart.Part(form_data)
     pieces = list(part.pieces(size_hint))
     eq_(len(pieces), 9)
     expected_pieces = [
@@ -69,7 +69,8 @@ def test_part_read_with_len():
         tmp.flush()
         tmp.seek(0)
         size_hint = 6
-        part = multipart.Part(FormData(b'a', FileValue(tmp)))
+        form_data = multipart.FormData(b'a', multipart.FileValue(tmp))
+        part = multipart.Part(form_data)
         pieces = list(part.pieces(size_hint))
         eq_(len(pieces), 9)
         expected_pieces = [
@@ -91,7 +92,7 @@ def test_part_read_with_len():
 
 @with_fixed_boundary
 def test_multipart_form_data():
-    data = [FormData('n1', 'v1')]
+    data = [multipart.FormData('n1', 'v1')]
     multipart_form_data = multipart.MultipartFormData(data)
     content = multipart_form_data.read()
     lines = content.split('\r\n')
