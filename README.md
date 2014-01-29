@@ -1,4 +1,4 @@
-inform
-======
+Inform Python Client Library
+============================
 
-Client library for creating self-describing ReSTful web services using HTML forms
+This is a Python client library for use with Web Services following the [Inform](Inform.md) standard.
