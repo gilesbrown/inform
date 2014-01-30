@@ -25,10 +25,14 @@ def start():
     return inform.get(start_url)
 
 
+def test_link():
+    doc = start().link()
+    ok_('<h1>elsewhere</h1>' in doc.response.content)
+    
+
 def test_get_no_params():
     doc = start().elsewhere()
     eq_(doc.response.url, urljoin(base_url, '/elsewhere?x=1'))
-    eq_(doc.response.status_code, 200)
     ok_('<h1>elsewhere</h1>' in doc.response.content)
 
 
@@ -60,6 +64,6 @@ def test_upload():
 
     
 def test_upload_chunked():
-    stream = StringIO("How long is a a peice of this string?")
+    stream = StringIO("Tomorrow and tomorrow and tomorrow ...")
     doc = start().upload_chunked(content=stream)
     eq_(doc.response.status_code, 201)

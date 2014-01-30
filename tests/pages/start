@@ -1,5 +1,8 @@
 <html>
   <body>
+  
+    <a id="link" href="/elsewhere">link</a> 
+    
     <!-- We'll put in just enough HTML to allow browser usage --> 
     <form id="elsewhere" action="/elsewhere">
          <input name="x" type="hidden" value="1" />

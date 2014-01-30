@@ -1,44 +1,95 @@
 import re
+import json
 from contextlib import closing
+from collections import OrderedDict
 from functools import partial
 from urlparse import urljoin
 from HTMLParser import HTMLParser
-from .representation import Representation, Form, Link, Input
+from .representation import Representation, Form, Link, Input, Select
 
 class Builder(object):
     """ Base class for all builders. """
     
-    def __init__(self, parser, make_url_absolute, tag, attrs):
+    builder_classes = {}
+    
+    def __init__(self, parser, make_url_absolute, attrs):
         self.parser = parser
         self.make_url_absolute = make_url_absolute
-        self.tag = tag
+        self.depth = []
+        self.built = []
         self.attrs = attrs
-    
+        self.text = ''
+        
     def start(self, tag, attrs):
+        if tag in self.builder_classes:
+            cls = self.builder_classes[tag]
+            return cls(self.parser, self.make_url_absolute, attrs)
         # Returning 'self' means ignore this tag
         return self
-    
-    def end(self, tag, builder):
-        if builder is self:
-            # We don't care about the tag that has just ended
-            return
-        self.add(builder)
         
-    def add(self, builder):
-        raise NotImplementedError()
+    def append_data(self, data):
+        if len(self.depth) < 2:
+            self.text += data
     
+    def end(self, builder):
+        self.built.append(builder.build())
+        
     def build(self):
-        raise NotImplementedError(self.tag)
+        raise NotImplementedError(self.depth)
     
 
 class InputBuilder(Builder):
     def build(self):
         return Input(self.attrs['name'], self.attrs.get('type', None), 
                      self.attrs.get('value', None))
+        
+        
+class OptionBuilder(Builder):
+    
+    def __init__(self, *args):
+        Builder.__init__(self, *args)
+        self.text = ''
+    
+    @property
+    def name(self):
+        return self.attrs['name']
+    
+    @property
+    def value(self):
+        return self.attrs.get('value', '').strip() or self.text
+    
+    @property
+    def selected(self):
+        return self.attrs.get('selected') == 'selected'
+        
+    def build(self):
+        return {'name': self.attrs.get} 
 
 
 class SelectBuilder(Builder):
-    pass
+    
+    def __init__(self, *args):
+        Builder.__init__(self, *args)
+        self.options = OrderedDict()
+        self.selected = []
+   
+    @property 
+    def multiple(self):
+        return self.attrs.get('multiple') == 'multiple'
+    
+    def start(self, tag, attrs):   
+        if tag == 'option':
+            cls = OptionBuilder
+            return cls(self.parser, self.make_url_absolute, attrs)
+        return self
+    
+    def end(self, builder):
+        if builder.selected:
+            self.selected.append(builder.text)
+        self.options[builder.text] = builder.value
+        
+    def build(self):
+        return Select(self.attrs['name'], self.options, self.selected)
 
 
 methods_tunnelled_through_post = ['PUT', 'PATCH', 'DELETE']
@@ -61,7 +112,7 @@ class FormBuilder(Builder):
     def start(self, tag, attrs):
         if 'name' in attrs and tag in self.builder_classes:
             cls = self.builder_classes[tag]
-            return cls(self.parser, self.make_url_absolute, tag, attrs)
+            return cls(self.parser, self.make_url_absolute, attrs)
         return self
     
     def build(self):
@@ -74,7 +125,7 @@ class FormBuilder(Builder):
                 method = match.group(1).upper()
         return Form(self.parser, self.inputs, action, method, enctype)
         
-    def add(self, builder):
+    def end(self, builder):
         self.inputs.append(builder.build())
 
 
@@ -85,28 +136,96 @@ class LinkBuilder(Builder):
 
 
 class ValueBuilder(Builder):
+    
+    builder_classes = {}
+    
+    def build(self):
+        if self.built:
+            assert not self.text.strip()
+            assert len(self.built) == 1
+            return self.built[0]
+        else:
+           classes = set(self.attrs.get('class', '').split())
+           if 'json' in classes:
+               return json.loads(self.text)
+           return self.text
+
+class DTBuilder(ValueBuilder):
     pass
+
+class DDBuilder(ValueBuilder):
+    pass
+    
+class DLBuilder(Builder):
+    
+    builder_classes = {
+        'dt': DTBuilder,
+        'dd': DDBuilder,
+    }
+    
+    def __init__(self, *args):
+        Builder.__init__(self, *args)
+        self.dt = None
+        self.dict = OrderedDict()
+        
+    def end(self, builder):
+        if builder.depth[0] == 'dt':
+            assert not self.dt
+            self.dt = builder
+        else:
+            assert builder.depth[0] == 'dd'
+            dt = self.__dict__.pop('dt')
+            dd = builder
+            self.dict[dt.build()] = dd.build()
+        
+    def build(self):
+        return self.dict
+
+    
+class LIBuilder(ValueBuilder):
+    pass
+        
+    
+class LBuilder(Builder):
+    
+    builder_classes = {
+        'li': LIBuilder,
+    }
+    
+    def __init__(self, *args):
+        Builder.__init__(self, *args)
+        self.list = []
+        
+    def end(self, builder):
+        self.list.append(builder.build())
+        
+    def build(self):
+        return self.list
+
 
 class RepresentationBuilder(Builder):
     
     builder_classes = {
         'form': FormBuilder,
         'a': LinkBuilder,
+        'dl': DLBuilder,
+        'ul': LBuilder,
+        'ol': LBuilder,
     }
 
     def __init__(self, parser, response):
         make_url_absolute = partial(urljoin, response.url)
-        Builder.__init__(self, parser, make_url_absolute, None, {})
+        Builder.__init__(self, parser, make_url_absolute, {})
         self.response = response
         self.items = []
 
     def start(self, tag, attrs):
         if 'id' in attrs:
             cls = self.builder_classes.get(tag, ValueBuilder)
-            return cls(self.parser, self.make_url_absolute, tag, attrs)
+            return cls(self.parser, self.make_url_absolute, attrs)
         return self
     
-    def add(self, builder):
+    def end(self, builder):
         self.items.append((builder.attrs['id'], builder.build()))
 
     def build(self):
@@ -145,9 +264,24 @@ class InformParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         builder = self.stack[-1].start(tag, attrs)
+        builder.depth.append(tag)
         self.stack.append(builder)
 
     def handle_endtag(self, tag):
-        child = self.stack.pop()
-        # Tell parent in stack about 'end' of child
-        self.stack[-1].end(tag, child)
+        builder = self.stack.pop()
+        if builder is not self.stack[-1]:
+            self.stack[-1].end(builder)
+        if tag != builder.depth[-1]:
+            #print self.getpos(), tag, builder.depth
+            raise Exception()
+        builder.depth.pop()
+            
+    def handle_data(self, data):
+        self.stack[-1].append_data(data)
+        
+ValueBuilder.builder_classes.update([
+    ('dl', DLBuilder),
+    ('ul', LBuilder),
+    ('ol', LBuilder),
+    ('a', LinkBuilder),
+])                                     
