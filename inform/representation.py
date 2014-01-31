@@ -18,16 +18,16 @@ class Input(object):
         if self.type == 'file' and hasattr(value, 'read'):
             value = FileValue(value)
         return [FormData(self.name, value)]
-    
+
 class Select(object):
     """ A <select> object. """
-    
+
     def __init__(self, name, options, default=MISSING):
         self.name = name
         self.type = type
         self.options = options
         self.default = default
-        
+
     def form_data(self, value):
         if not isinstance(value, basestring) and hasattr(value, '__iter__'):
             return [FormData(self.name, self.options[v]) for v in value]
@@ -60,7 +60,10 @@ class Form(object):
         if self.method in ('GET', 'DELETE'):
             params = form_data
         else:
-            if self.enctype is not None:
+            if self.enctype is None:
+	        # content type will be 'application/x-www-form-urlencoded'
+                data = form_data
+            else:
                 data = MultipartFormData(form_data)
                 headers = data.headers(self.enctype)
 
@@ -69,7 +72,7 @@ class Form(object):
 
 
 class Link(unicode):
-    
+
     def __new__(cls, parser, url):
         instance = super(Link, cls).__new__(cls, url)
         instance.parser = parser
